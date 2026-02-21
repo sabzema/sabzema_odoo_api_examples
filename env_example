@@ -1,0 +1,7 @@
+ODOO_URL=https://your-odoo-instance.com
+DB=your_database
+USERNAME=your_username
+PASSWORD=your_password
+TOTAL_RECORDS=3000000
+BATCH_SIZE=1000
+THREADS=30

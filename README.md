@@ -28,6 +28,8 @@ PASSWORD=your_password
 TOTAL_RECORDS=3000000
 BATCH_SIZE=1000
 THREADS=30
+ENABLE_CSV=true
+CSV_FILE=inserted_partners.csv
 ```
 
 - ODOO_URL – Base URL of your Odoo server.
@@ -37,7 +39,20 @@ THREADS=30
 - TOTAL_RECORDS – Number of records to insert (default 3 000 000).
 - BATCH_SIZE – Number of records per batch (default 1000).
 - THREADS – Number of concurrent threads (default 30).
+- ENABLE_CSV – Enables writing inserted records to CSV (true/false, default true).
+- CSV_FILE – Output CSV filename (default inserted_partners.csv)
 
+### CSV Behavior
+
+#### When ENABLE_CSV=true:
+The script creates the CSV file if it does not exist.
+Each inserted record ID is stored alongside generated data.
+Thread-safe writing is used to prevent corruption.
+
+#### When ENABLE_CSV=false:
+No CSV file is created.
+No disk I/O occurs.
+Bulk insert runs at maximum speed (recommended for pure performance testing).
 
 ## Usage
 

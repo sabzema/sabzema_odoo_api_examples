@@ -1,12 +1,7 @@
-#   _____ _____ _____ _____ _____ _____ _____
-#  |   __|  _  | __  |__   |   __|     |  _  |
-#  |__   |     | __ -|   __|   __| | | |     |
-#  |_____|__|__|_____|_____|_____|_|_|_|__|__|
-#
-
 import time
 import requests
 import os
+import csv
 from faker import Faker
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -26,15 +21,25 @@ PASSWORD = os.getenv("PASSWORD")
 TOTAL_RECORDS = int(os.getenv("TOTAL_RECORDS", "100000"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
 THREADS = int(os.getenv("THREADS", "30"))
+CSV_FILE = os.getenv("CSV_FILE", "inserted_partners.csv")
+ENABLE_CSV = os.getenv("ENABLE_CSV", "false").lower() in ("1", "true", "yes")
 
 fake = Faker("fa_IR")
-lock = Lock()                            # for updating shared counters safely
+lock = Lock()            # console + counters
+csv_lock = Lock()        # csv writes
 
 # ---------------------------
-# JSON‑RPC HELPER (for new endpoints)
+# PREPARE CSV (only if enabled)
+# ---------------------------
+if ENABLE_CSV and not os.path.exists(CSV_FILE):
+    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "name", "email", "phone", "company_type"])
+
+# ---------------------------
+# JSON-RPC HELPER
 # ---------------------------
 def json_rpc_call(session, endpoint, method, params):
-    """Perform a JSON‑RPC request to the given endpoint and return the result."""
     payload = {
         "jsonrpc": "2.0",
         "method": method,
@@ -46,16 +51,15 @@ def json_rpc_call(session, endpoint, method, params):
         resp.raise_for_status()
         result = resp.json()
         if "error" in result:
-            raise Exception(f"JSON‑RPC error: {result['error']}")
+            raise Exception(f"JSON-RPC error: {result['error']}")
         return result["result"]
     except Exception as e:
         raise Exception(f"Request to {endpoint} failed: {e}")
 
 # ---------------------------
-# AUTHENTICATION (returns an authenticated session)
+# AUTHENTICATION
 # ---------------------------
 def authenticate():
-    """Authenticate and return a requests.Session with the session cookie."""
     session = requests.Session()
     json_rpc_call(session, "/web/session/authenticate", "call", {
         "db": DB,
@@ -77,7 +81,6 @@ def format_time(seconds):
 # CONTACT GENERATOR
 # ---------------------------
 def generate_contact(i=None):
-    """Generate Farsi contact info"""
     return {
         "name": fake.name(),
         "email": fake.email(),
@@ -92,16 +95,37 @@ total_inserted = 0
 batch_count = 0
 
 # ---------------------------
-# FUNCTION TO INSERT A BATCH (executed in a thread)
+# CSV WRITER (only if enabled)
+# ---------------------------
+def append_to_csv(ids, batch):
+    if not ENABLE_CSV:
+        return
+
+    rows = []
+    for rec_id, data in zip(ids, batch):
+        rows.append([
+            rec_id,
+            data.get("name"),
+            data.get("email"),
+            data.get("phone"),
+            data.get("company_type"),
+        ])
+
+    with csv_lock:
+        with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+# ---------------------------
+# FUNCTION TO INSERT A BATCH
 # ---------------------------
 def insert_batch(batch, batch_index):
     global total_inserted, batch_count
     start = time.perf_counter()
 
-    # Each thread authenticates once (creates its own session with cookie)
     session = authenticate()
     try:
-        json_rpc_call(session, "/web/dataset/call_kw", "call", {
+        created_ids = json_rpc_call(session, "/web/dataset/call_kw", "call", {
             "model": "res.partner",
             "method": "create",
             "args": [batch],
@@ -114,6 +138,12 @@ def insert_batch(batch, batch_index):
                 }
             }
         })
+
+        if isinstance(created_ids, int):
+            created_ids = [created_ids]
+
+        append_to_csv(created_ids, batch)
+
     except Exception as e:
         with lock:
             print(f"\nBatch {batch_index} failed: {e}", flush=True)
@@ -127,11 +157,15 @@ def insert_batch(batch, batch_index):
     with lock:
         batch_count += 1
         total_inserted += len(batch)
-        print(f"\rBatch {batch_count}: Total inserted {total_inserted} / {TOTAL_RECORDS} "
-              f"in {format_time(elapsed)}", end="", flush=True)
+        print(
+            f"\rBatch {batch_count}: Total inserted {total_inserted} / {TOTAL_RECORDS} "
+            f"in {format_time(elapsed)}",
+            end="",
+            flush=True,
+        )
 
 # ---------------------------
-# MAIN LOOP WITH THREAD POOL
+# MAIN LOOP
 # ---------------------------
 start_time = time.perf_counter()
 
@@ -149,7 +183,6 @@ with ThreadPoolExecutor(max_workers=THREADS) as executor:
     if current_batch:
         futures.append(executor.submit(insert_batch, current_batch, batch_count))
 
-    # Wait for all threads and re-raise any exception
     for future in futures:
         future.result()
 
@@ -157,7 +190,6 @@ end_time = time.perf_counter()
 total_time = end_time - start_time
 print(f"\nTotal elapsed time: {format_time(total_time)}")
 
-# Calculate and print insertion rate
 if total_time > 0:
     rate = total_inserted / total_time
     print(f"Insertion rate: {rate:.2f} records per second")

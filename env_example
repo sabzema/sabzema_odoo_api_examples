@@ -5,3 +5,5 @@ PASSWORD=your_password
 TOTAL_RECORDS=3000000
 BATCH_SIZE=1000
 THREADS=30
+ENABLE_CSV=false
+CSV_FILE=inserted_partners.csv

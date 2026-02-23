@@ -153,7 +153,7 @@ Please ensure your code follows the existing style and includes comments where n
 This project is licensed under the MIT License.
 
 # Contact
-Created by (Sabzema)[https://sabzema.com] – feel free to reach out via GitHub Issues for questions or suggestions.
+Created by [Sabzema](https://sabzema.com) – feel free to reach out via GitHub Issues for questions or suggestions.
 
 # References
 - [Odoo JSON-RPC Document](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html)
